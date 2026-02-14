@@ -46,6 +46,7 @@ export default function ChatPage() {
         // Query backend
         const res = await fetch("/api/query", {
             method: "POST",
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ question: input, mode, anon_user_id: anonUserId }),
         });
         const data = await res.json();
