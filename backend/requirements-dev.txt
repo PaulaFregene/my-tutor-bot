@@ -1,0 +1,7 @@
+# Development dependencies only
+# Install with: pip install -r requirements-dev.txt
+
+# Code Quality
+black
+flake8
+isort
