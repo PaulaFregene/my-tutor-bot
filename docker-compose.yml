@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - FRONTEND_URL=http://localhost:3000
+      # Add your API keys here for local testing
+      # - GROQ_API_KEY=${GROQ_API_KEY}
+      # - LLAMA_CLOUD_API_KEY=${LLAMA_CLOUD_API_KEY}
+    volumes:
+      - ./backend:/app
+      - backend_data:/app/chroma_db
+      - backend_pdfs:/app/uploaded_pdfs
+    networks:
+      - tutorbot
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      # Add your Clerk keys here
+      # - NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}
+      # - CLERK_SECRET_KEY=${CLERK_SECRET_KEY}
+    depends_on:
+      - backend
+    networks:
+      - tutorbot
+
+volumes:
+  backend_data:
+  backend_pdfs:
+
+networks:
+  tutorbot:
+    driver: bridge

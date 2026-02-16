@@ -1,13 +1,14 @@
 "use client";
 import { useState } from "react";
-import { useAnonUserId, isAdmin } from "../../lib/auth";
+import { useAnonUserId, useIsAdmin } from "../../lib/auth";
 
 export default function UploadPDF() {
   const [file, setFile] = useState<File | null>(null);
   const [status, setStatus] = useState("");
   const anonUserId = useAnonUserId();
+  const isAdmin = useIsAdmin();
 
-  if (!anonUserId || !isAdmin(anonUserId)) {
+  if (!anonUserId || !isAdmin) {
     return <p className="text-red-600">Access denied. Admins only.</p>;
   }
 
@@ -28,8 +29,14 @@ export default function UploadPDF() {
   return (
     <div className="max-w-lg mx-auto p-4">
       <h1 className="text-2xl font-bold mb-4">Upload Course PDF</h1>
-      <input type="file" accept="application/pdf" onChange={(e) => setFile(e.target.files?.[0] || null)} />
-      <button onClick={handleUpload} className="ml-2 px-4 py-2 bg-blue-600 text-white rounded">Upload</button>
+      <input
+        type="file"
+        accept="application/pdf"
+        onChange={(e) => setFile(e.target.files?.[0] || null)}
+      />
+      <button onClick={handleUpload} className="ml-2 px-4 py-2 bg-[#4E2A84] text-white rounded">
+        Upload
+      </button>
       {status && <p className="mt-2">{status}</p>}
     </div>
   );

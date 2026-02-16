@@ -1,5 +1,5 @@
-import ChatPage from "./ChatPage"; 
+import ChatPage from "./ChatPage";
 
 export default function Page() {
-  return <ChatPage />; 
+  return <ChatPage />;
 }

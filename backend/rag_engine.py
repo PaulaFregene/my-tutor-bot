@@ -5,19 +5,36 @@ Replaces LlamaCloud with local, controlled RAG stack
 
 import os
 from pathlib import Path
-from dotenv import load_dotenv
 
+import chromadb
+from dotenv import load_dotenv
 from llama_index.core import (
-    VectorStoreIndex,
+    Settings,
     SimpleDirectoryReader,
     StorageContext,
-    Settings,
+    VectorStoreIndex,
 )
 from llama_index.core.node_parser import SentenceSplitter
-from llama_index.vector_stores.chroma import ChromaVectorStore
-from llama_index.llms.groq import Groq
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
-import chromadb
+from llama_index.llms.groq import Groq
+from llama_index.vector_stores.chroma import ChromaVectorStore
+
+from s3_storage import (
+    download_file_from_s3,
+    ensure_pdf_local,
+    is_s3_enabled,
+    list_s3_pdfs,
+)
+
+try:
+    import pypdf
+
+    HAS_PYPDF = True
+except ImportError:
+    HAS_PYPDF = False
+    print(
+        "[WARNING] pypdf not installed. Install it for better page number accuracy: pip install pypdf"
+    )
 
 load_dotenv()
 
@@ -26,149 +43,246 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 CHROMA_PATH = "./chroma_db"
 PDF_UPLOAD_DIR = "./uploaded_pdfs"
 
-# Create directories if they don't exist
 Path(CHROMA_PATH).mkdir(exist_ok=True)
 Path(PDF_UPLOAD_DIR).mkdir(exist_ok=True)
 
-# Configure LlamaIndex settings
+# Settings
 Settings.llm = Groq(
     model="llama-3.3-70b-versatile", temperature=0.7, api_key=GROQ_API_KEY
 )
 Settings.embed_model = HuggingFaceEmbedding(model_name="BAAI/bge-small-en-v1.5")
 Settings.node_parser = SentenceSplitter(chunk_size=512, chunk_overlap=50)
 
-# Initialize Chroma client
+# Init Chroma
 chroma_client = chromadb.PersistentClient(path=CHROMA_PATH)
 chroma_collection = chroma_client.get_or_create_collection("course_materials")
-
-# Create vector store
 vector_store = ChromaVectorStore(chroma_collection=chroma_collection)
 storage_context = StorageContext.from_defaults(vector_store=vector_store)
 
-# Global index (loaded on startup if exists)
 index = None
 
 
+def get_accurate_page_number(file_path: str, content_snippet: str) -> str:
+    """
+    Get accurate page number from PDF file.
+    Uses pypdf if available, otherwise falls back to page_label.
+    Downloads from S3 if necessary.
+    """
+    if not HAS_PYPDF:
+        return "?"
+
+    try:
+        pdf_path = Path(file_path)
+
+        # If file doesn't exist locally and S3 is enabled, try to get it from S3
+        if not pdf_path.exists() and is_s3_enabled():
+            filename = pdf_path.name
+            pdf_path = ensure_pdf_local(filename, Path(PDF_UPLOAD_DIR))
+            if pdf_path is None:
+                print(f"[DEBUG] PDF file not found locally or in S3: {file_path}")
+                return "?"
+
+        # Check if file exists
+        if not pdf_path.exists():
+            print(f"[DEBUG] PDF file not found: {file_path}")
+            return "?"
+
+        with open(pdf_path, "rb") as pdf_file:
+            reader = pypdf.PdfReader(pdf_file)
+            total_pages = len(reader.pages)
+
+            if not content_snippet or len(content_snippet) < 10:
+                # Not enough content to search for
+                return "?"
+
+            # Get first 50 characters of content to search for
+            search_text = content_snippet[:50].strip()
+
+            # Search for the snippet in each page
+            for page_num in range(total_pages):
+                try:
+                    page = reader.pages[page_num]
+                    text = page.extract_text()
+
+                    # Use a more flexible matching - check if any substring matches
+                    if search_text in text or text.find(search_text[:30]) >= 0:
+                        return str(page_num + 1)  # +1 because pages are 0-indexed
+                except Exception as page_e:
+                    print(f"[DEBUG] Error reading page {page_num}: {page_e}")
+                    continue
+    except Exception as e:
+        print(f"[DEBUG] Could not extract accurate page number from {file_path}: {e}")
+
+    return "?"
+
+
 def initialize_index():
-    """Initialize or load existing index"""
     global index
     try:
-        # Try to load existing index
         index = VectorStoreIndex.from_vector_store(
             vector_store=vector_store,
             storage_context=storage_context,
         )
-        print("[RAG] Loaded existing index from Chroma")
-    except Exception as e:
-        print(f"[RAG] No existing index found: {e}")
-        # Create empty index
-        index = VectorStoreIndex.from_documents(
-            [],
-            storage_context=storage_context,
-        )
+        print("[RAG] Loaded existing index")
+    except Exception:
+        index = VectorStoreIndex.from_documents([], storage_context=storage_context)
         print("[RAG] Created new empty index")
 
 
 def ingest_pdfs(pdf_directory: str = PDF_UPLOAD_DIR):
-    """
-    Ingest all PDFs from a directory into the vector store
-    """
     global index
-
     print(f"[INGEST] Loading PDFs from {pdf_directory}")
 
-    try:
-        # Load documents
-        documents = SimpleDirectoryReader(pdf_directory).load_data()
-        print(f"[INGEST] Loaded {len(documents)} documents")
+    # If S3 is enabled, sync PDFs from S3 to local directory first
+    if is_s3_enabled():
+        print("[INGEST] S3 enabled, syncing PDFs from S3...")
+        s3_files = list_s3_pdfs()
+        pdf_dir = Path(pdf_directory)
 
+        for filename in s3_files:
+            local_path = pdf_dir / filename
+            if not local_path.exists():
+                print(f"[INGEST] Downloading {filename} from S3...")
+                s3_key = f"pdfs/{filename}"
+                download_file_from_s3(s3_key, local_path)
+
+    try:
+        documents = SimpleDirectoryReader(pdf_directory).load_data()
         if not documents:
             return {"status": "error", "message": "No PDFs found"}
 
-        # Create/update index
         index = VectorStoreIndex.from_documents(
-            documents,
-            storage_context=storage_context,
-            show_progress=True,
+            documents, storage_context=storage_context, show_progress=True
         )
-
-        print(f"[INGEST] Successfully indexed {len(documents)} documents")
-        return {
-            "status": "success",
-            "message": f"Indexed {len(documents)} documents",
-            "document_count": len(documents),
-        }
-
+        return {"status": "success", "document_count": len(documents)}
     except Exception as e:
-        print(f"[INGEST ERROR] {e}")
         return {"status": "error", "message": str(e)}
 
 
-def query_rag(question: str, system_prompt: str) -> str:
-    """
-    Query the RAG system with a question
-
-    Flow:
-    1. Retrieve relevant chunks from vector store
-    2. Generate answer using LLM with system prompt
-    """
+def query_rag(
+    question: str, system_prompt: str, chat_history: list = []
+):  # <--- Added argument
     global index
-
     if index is None:
         initialize_index()
 
-    print(f"[QUERY] Question: {question[:100]}...")
+    # Format history
+    history_str = ""
+    if chat_history:
+        # DB already limits to 10, so we just join them
+        history_str = "\n".join(
+            [f"{msg['role'].upper()}: {msg['content']}" for msg in chat_history]
+        )
 
     try:
-        # Create query engine with custom prompt
+        # Create engine
         query_engine = index.as_query_engine(
-            similarity_top_k=3,  # Top 3 chunks
+            similarity_top_k=10,
             response_mode="compact",
         )
 
-        # Build full prompt with system instructions
+        # Prompt construction (Fixed to include history)
         full_query = f"""
 {system_prompt}
 
-Based on the course materials provided, answer this question:
+PREVIOUS CONVERSATION HISTORY:
+{history_str}
+
+INSTRUCTION:
+Based on the course materials provided and the conversation history above, answer this question:
 {question}
 """
 
-        print("[QUERY] Retrieving relevant chunks...")
         response = query_engine.query(full_query)
+        answer_text = str(response)
 
-        answer = str(response)
-        print(f"[QUERY] Generated answer ({len(answer)} chars)")
+        if "I cannot find this information" in answer_text:
+            citations = []
+        else:
+            # Extract Citations with accurate page numbers
+            citations = []
+            seen = set()
+            if hasattr(response, "source_nodes"):
+                for node in response.source_nodes:
+                    metadata = node.node.metadata
+                    file_name = metadata.get("file_name", "Unknown File")
 
-        # Get source information
-        source_nodes = (
-            response.source_nodes if hasattr(response, "source_nodes") else []
-        )
-        print(f"[QUERY] Used {len(source_nodes)} source chunks")
+                    # Try to get accurate page number
+                    page_label = metadata.get("page_label", "?")
 
-        return answer
+                    # If we have page label, try to get accurate page from PDF
+                    if HAS_PYPDF and file_name and file_name != "Unknown File":
+                        pdf_path = Path(PDF_UPLOAD_DIR) / file_name
+                        if pdf_path.exists():
+                            # Get snippet of content to search for
+                            content_snippet = (
+                                node.get_content()
+                                if hasattr(node, "get_content")
+                                else ""
+                            )
+                            if not content_snippet:
+                                # Try alternative ways to get content
+                                if hasattr(node, "text"):
+                                    content_snippet = node.text
+                                elif hasattr(node, "content"):
+                                    content_snippet = node.content
+                                else:
+                                    content_snippet = str(node)
+
+                            accurate_page = get_accurate_page_number(
+                                str(pdf_path), content_snippet
+                            )
+                            page_label = (
+                                accurate_page if accurate_page != "?" else page_label
+                            )
+
+                    citation_key = f"{file_name}|{page_label}"
+                    if citation_key not in seen:
+                        seen.add(citation_key)
+                        citations.append(f"{file_name} (Page {page_label})")
+
+        return {"answer": answer_text, "citations": citations}
 
     except Exception as e:
-        print(f"[QUERY ERROR] {e}")
         import traceback
 
         traceback.print_exc()
-        raise
+        raise e
+
+
+def delete_pdf_from_database(pdf_filename: str):
+    """
+    Delete all embeddings of a specific PDF from the Chroma database.
+    This ensures deleted PDFs don't appear in query results.
+    """
+    try:
+        collection = chroma_client.get_collection("course_materials")
+
+        # Query for all documents with this file name
+        # Get all metadata to find entries for this file
+        results = collection.get(where={"file_name": pdf_filename})
+
+        if results and results["ids"]:
+            # Delete all found documents
+            collection.delete(ids=results["ids"])
+            print(
+                f"[DELETE] Removed {len(results['ids'])} embeddings for {pdf_filename}"
+            )
+            return True
+        else:
+            print(f"[DELETE] No embeddings found for {pdf_filename}")
+            return True
+    except Exception as e:
+        print(f"[DELETE ERROR] Could not delete {pdf_filename} from database: {e}")
+        return False
 
 
 def get_index_stats():
-    """Get statistics about the current index"""
     try:
         collection = chroma_client.get_collection("course_materials")
-        count = collection.count()
-        return {
-            "status": "success",
-            "document_count": count,
-            "index_initialized": index is not None,
-        }
+        return {"status": "success", "document_count": collection.count()}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
 
-# Initialize on module load
 initialize_index()
