@@ -1,0 +1,10 @@
+# Ignore local environment and database files
+venv/
+.env
+.git/
+.github/
+backend/chroma_db/
+backend/uploaded_pdfs/
+**/__pycache__/
+frontend/
+node_modules/
