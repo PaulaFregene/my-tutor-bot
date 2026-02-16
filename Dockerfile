@@ -3,6 +3,9 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
+# Suppress Debian package configuration dialogs during build
+ENV DEBIAN_FRONTEND=noninteractive
+
 # Install system dependencies in one layer
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
