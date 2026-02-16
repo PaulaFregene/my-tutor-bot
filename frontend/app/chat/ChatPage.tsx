@@ -6,6 +6,11 @@ import { useClerk } from "@clerk/nextjs";
 import ModeSelector from "./ModeSelector";
 import { useAnonUserId, useUsername, useIsAdmin } from "../../lib/auth";
 
+// --- CONFIGURATION ---
+// This automatically picks the right URL based on where the code is running
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+// ---------------------
+
 type Message = {
   role: "user" | "assistant";
   content: string;
@@ -137,7 +142,8 @@ export default function ChatPage() {
     async (maxRetries = 3) => {
       for (let attempt = 0; attempt < maxRetries; attempt++) {
         try {
-          const res = await fetch("http://localhost:8000/api/files");
+          // UPDATED: Using API_BASE_URL
+          const res = await fetch(`${API_BASE_URL}/api/files`);
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
           const data = await res.json();
@@ -177,7 +183,8 @@ export default function ChatPage() {
     }
 
     try {
-      const res = await fetch("http://localhost:8000/api/delete-pdf", {
+      // UPDATED: Using API_BASE_URL
+      const res = await fetch(`${API_BASE_URL}/api/delete-pdf`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ filename }),
@@ -211,7 +218,8 @@ export default function ChatPage() {
   // Handle save display name
   const handleSaveDisplayName = async (filename: string) => {
     try {
-      const res = await fetch("http://localhost:8000/api/set-display-name", {
+      // UPDATED: Using API_BASE_URL
+      const res = await fetch(`${API_BASE_URL}/api/set-display-name`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ filename, display_name: editingName }),
@@ -259,7 +267,8 @@ export default function ChatPage() {
         const formData = new FormData();
         formData.append("file", file);
 
-        const uploadRes = await fetch("http://localhost:8000/api/upload", {
+        // UPDATED: Using API_BASE_URL
+        const uploadRes = await fetch(`${API_BASE_URL}/api/upload`, {
           method: "POST",
           body: formData,
         });
@@ -271,7 +280,8 @@ export default function ChatPage() {
         setUploadStatus("Indexing...");
 
         // Step 2: Ingest the PDFs
-        const ingestRes = await fetch("http://localhost:8000/api/ingest", {
+        // UPDATED: Using API_BASE_URL
+        const ingestRes = await fetch(`${API_BASE_URL}/api/ingest`, {
           method: "POST",
         });
 
@@ -313,7 +323,8 @@ export default function ChatPage() {
     if (!anonUserId) return;
 
     // Fetch History with error handling
-    fetch("http://localhost:8000/api/history", {
+    // UPDATED: Using API_BASE_URL
+    fetch(`${API_BASE_URL}/api/history`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ anon_user_id: anonUserId }),
@@ -353,7 +364,8 @@ export default function ChatPage() {
     setIsLoading(true);
 
     try {
-      const res = await fetch("http://localhost:8000/api/query", {
+      // UPDATED: Using API_BASE_URL
+      const res = await fetch(`${API_BASE_URL}/api/query`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -683,7 +695,8 @@ export default function ChatPage() {
           <div className="flex-1 p-4 h-full">
             {activeFile ? (
               <iframe
-                src={`http://localhost:8000/pdfs/${activeFile}`}
+                // UPDATED: Using API_BASE_URL
+                src={`${API_BASE_URL}/pdfs/${activeFile}`}
                 className="w-full h-full rounded border border-gray-300 bg-white"
               />
             ) : (
