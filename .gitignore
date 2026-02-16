@@ -27,6 +27,7 @@ yarn-error.log*
 # local env files
 .env*.local
 .env
+.env.production
 
 # vercel
 .vercel
@@ -34,3 +35,46 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+ENV/
+env/
+*.egg-info/
+.installed.cfg
+*.egg
+*.pyc
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+*.db-shm
+*.db-wal
+conversations.db
+conversations.db-shm
+conversations.db-wal
+*.bin
+
+# Chroma DB (local - use cloud in production)
+backend/chroma_db/
+chroma_db/
+
+# PDFs (local uploads - use S3 in production)
+backend/uploaded_pdfs/
+uploaded_pdfs/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*~
+
+# Node/Next.js
+node_modules/
+.next/
