@@ -1,4 +1,5 @@
 # Python dependencies
+# --- LIGHTWEIGHT DEPENDENCIES ---
 
 # FastAPI
 fastapi
@@ -7,12 +8,15 @@ pydantic
 python-multipart
 python-dotenv
 
+# --- HEAVY DEPENDENCIES (INSTALLED IN DOCKERFILE) ---
+# These are removed from here to prevent Railway build timeouts.
+# If running LOCALLY, uncomment these lines to install:
 # RAG Stack
-llama-index-core
-llama-index-llms-groq
-llama-index-embeddings-huggingface
-llama-index-vector-stores-chroma
-chromadb
+# llama-index-core
+# llama-index-llms-groq
+# llama-index-embeddings-huggingface
+# llama-index-vector-stores-chroma
+# chromadb
 groq
 
 # PDF parsing
