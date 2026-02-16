@@ -14,5 +14,5 @@ RUN npm run build
 
 EXPOSE 3000
 
-# Start Next.js in production mode
-CMD ["npm", "start"]
+# Start Next.js in production mode, using PORT env var if set
+CMD ["sh", "-c", "next start -p ${PORT:-3000}"]
