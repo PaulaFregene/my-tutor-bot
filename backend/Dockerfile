@@ -15,9 +15,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy backend code
 COPY . .
 
-# Expose port (Railway will set PORT env var, but default to 8000 for local)
-ENV PORT=8000
+# Expose port (Railway will set PORT env var)
 EXPOSE 8000
 
-# Run FastAPI with uvicorn
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Run FastAPI with uvicorn using PORT env var from Railway
+CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}"]
