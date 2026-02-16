@@ -1,27 +1,28 @@
-# Use Python 3.11 slim image with better layer caching
+# Use Python 3.11 slim image
 FROM python:3.11-slim
+
+# 1. Prevent the "debconf" error you saw earlier
+ARG DEBIAN_FRONTEND=noninteractive
 
 WORKDIR /app
 
-# Suppress Debian package configuration dialogs during build
-ENV DEBIAN_FRONTEND=noninteractive
-
-# Install system dependencies in one layer
+# 2. Install g++ (Critical for ChromaDB/LlamaIndex) and clean up apt cache to save space
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
+    g++ \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy only requirements first for better caching
 COPY backend/requirements.txt ./
 
-# Install Python dependencies with optimizations
-RUN pip install --no-cache-dir --no-warn-script-location -r requirements.txt
+# 3. Upgrade pip first, then install dependencies
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir --no-warn-script-location -r requirements.txt
 
 # Copy backend code
 COPY backend .
 
-# Expose port
 EXPOSE 8000
 
 # Health check
