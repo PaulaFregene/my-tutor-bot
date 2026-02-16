@@ -20,11 +20,3 @@ pypdf
 
 # AWS S3 (for file storage)
 boto3
-
-# Database
-psycopg2-binary
-
-# Code Quality
-black
-flake8
-isort
