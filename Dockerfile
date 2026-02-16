@@ -5,7 +5,7 @@ ARG DEBIAN_FRONTEND=noninteractive
 
 WORKDIR /app
 
-# 1. Install System Deps (g++ is needed for ChromaDB)
+# 1. Install System Deps
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     g++ \
@@ -15,27 +15,31 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # 2. Install CPU Torch (Lightweight)
 RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
 
-# 3. Install Heavy AI Libraries manually
-# Removed these from requirements.txt, so we MUST install them here.
-RUN pip install --no-cache-dir \
-    chromadb \
-    llama-index-core \
-    llama-index-llms-groq \
-    llama-index-embeddings-huggingface \
-    llama-index-vector-stores-chroma
+# --- THE LADDER STRATEGY ---
 
-# 4. Copy requirements and install the rest (FastAPI, etc.)
+# 3. [LADDER STEP 1] Install ChromaDB (The heaviest database part)
+# If this finishes, it is saved forever.
+RUN pip install --no-cache-dir chromadb llama-index-vector-stores-chroma
+
+# 4. [LADDER STEP 2] Install HuggingFace (The heaviest AI model part)
+# This downloads 'transformers' which was timing out before.
+RUN pip install --no-cache-dir llama-index-embeddings-huggingface
+
+# 5. [LADDER STEP 3] Install the rest of LlamaIndex
+RUN pip install --no-cache-dir llama-index-core llama-index-llms-groq
+
+# ---------------------------
+
+# 6. Copy requirements and install light dependencies (FastAPI, etc.)
 COPY backend/requirements.txt ./
 RUN pip install --no-cache-dir --no-warn-script-location -r requirements.txt
 
-# 5. Copy Backend Code
+# 7. Copy Code & Start
 COPY backend .
 
 EXPOSE 8000
 
-# Health check to ensure app is running
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
-# Start the app
 CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}"]
