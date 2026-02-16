@@ -40,24 +40,49 @@ load_dotenv()
 
 # Configuration
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+if not GROQ_API_KEY:
+    raise ValueError(
+        "GROQ_API_KEY environment variable is required. "
+        "Please set it in your environment or .env file."
+    )
+
 CHROMA_PATH = "./chroma_db"
 PDF_UPLOAD_DIR = "./uploaded_pdfs"
 
-Path(CHROMA_PATH).mkdir(exist_ok=True)
-Path(PDF_UPLOAD_DIR).mkdir(exist_ok=True)
+try:
+    Path(CHROMA_PATH).mkdir(exist_ok=True)
+    Path(PDF_UPLOAD_DIR).mkdir(exist_ok=True)
+except Exception as e:
+    print(f"[ERROR] Failed to create directories: {e}")
+    raise
 
 # Settings
-Settings.llm = Groq(
-    model="llama-3.3-70b-versatile", temperature=0.7, api_key=GROQ_API_KEY
-)
-Settings.embed_model = HuggingFaceEmbedding(model_name="BAAI/bge-small-en-v1.5")
-Settings.node_parser = SentenceSplitter(chunk_size=512, chunk_overlap=50)
+try:
+    print("[RAG] Initializing Groq LLM...")
+    Settings.llm = Groq(
+        model="llama-3.3-70b-versatile", temperature=0.7, api_key=GROQ_API_KEY
+    )
+
+    print("[RAG] Loading embedding model (this may take a moment on first run)...")
+    Settings.embed_model = HuggingFaceEmbedding(model_name="BAAI/bge-small-en-v1.5")
+
+    Settings.node_parser = SentenceSplitter(chunk_size=512, chunk_overlap=50)
+    print("[RAG] Settings configured successfully")
+except Exception as e:
+    print(f"[ERROR] Failed to initialize RAG settings: {e}")
+    raise
 
 # Init Chroma
-chroma_client = chromadb.PersistentClient(path=CHROMA_PATH)
-chroma_collection = chroma_client.get_or_create_collection("course_materials")
-vector_store = ChromaVectorStore(chroma_collection=chroma_collection)
-storage_context = StorageContext.from_defaults(vector_store=vector_store)
+try:
+    print("[RAG] Initializing ChromaDB...")
+    chroma_client = chromadb.PersistentClient(path=CHROMA_PATH)
+    chroma_collection = chroma_client.get_or_create_collection("course_materials")
+    vector_store = ChromaVectorStore(chroma_collection=chroma_collection)
+    storage_context = StorageContext.from_defaults(vector_store=vector_store)
+    print("[RAG] ChromaDB initialized successfully")
+except Exception as e:
+    print(f"[ERROR] Failed to initialize ChromaDB: {e}")
+    raise
 
 index = None
 

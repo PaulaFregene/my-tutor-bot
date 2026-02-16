@@ -23,20 +23,44 @@ USE_S3 = os.getenv("USE_S3", "false").lower() == "true"
 
 # Initialize S3 client (only if S3 is enabled)
 s3_client = None
-if USE_S3 and AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY and AWS_S3_BUCKET:
-    try:
-        s3_client = boto3.client(
-            "s3",
-            aws_access_key_id=AWS_ACCESS_KEY_ID,
-            aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
-            region_name=AWS_REGION,
-        )
-        print(f"[S3] Initialized S3 client for bucket: {AWS_S3_BUCKET}")
-    except Exception as e:
-        print(f"[S3 ERROR] Failed to initialize S3 client: {e}")
-        s3_client = None
+if USE_S3:
+    print("[S3] USE_S3 is enabled, initializing S3 client...")
+
+    # Validate required environment variables
+    if not AWS_ACCESS_KEY_ID:
+        print("[S3 ERROR] AWS_ACCESS_KEY_ID is not set")
+    if not AWS_SECRET_ACCESS_KEY:
+        print("[S3 ERROR] AWS_SECRET_ACCESS_KEY is not set")
+    if not AWS_S3_BUCKET:
+        print("[S3 ERROR] AWS_S3_BUCKET is not set")
+
+    if AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY and AWS_S3_BUCKET:
+        try:
+            s3_client = boto3.client(
+                "s3",
+                aws_access_key_id=AWS_ACCESS_KEY_ID,
+                aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
+                region_name=AWS_REGION,
+            )
+            # Test the connection
+            s3_client.head_bucket(Bucket=AWS_S3_BUCKET)
+            print(f"[S3] Successfully connected to S3 bucket: {AWS_S3_BUCKET}")
+        except ClientError as e:
+            error_code = e.response.get("Error", {}).get("Code", "Unknown")
+            print(
+                f"[S3 ERROR] Failed to connect to S3 bucket '{AWS_S3_BUCKET}': {error_code}"
+            )
+            print(f"[S3 ERROR] Details: {e}")
+            print("[S3] Falling back to local storage")
+            s3_client = None
+        except Exception as e:
+            print(f"[S3 ERROR] Failed to initialize S3 client: {e}")
+            print("[S3] Falling back to local storage")
+            s3_client = None
+    else:
+        print("[S3] Missing required AWS credentials, using local storage")
 else:
-    print("[S3] S3 storage disabled or not configured, using local storage")
+    print("[S3] S3 storage disabled (USE_S3=false), using local storage")
 
 
 def is_s3_enabled() -> bool:

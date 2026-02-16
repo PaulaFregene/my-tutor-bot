@@ -6,7 +6,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles  # Import this
+from fastapi.staticfiles import StaticFiles
 
 from db import get_history, save_message
 from its import apply_its_mode
@@ -31,7 +31,7 @@ load_dotenv()
 
 app = FastAPI()
 
-# CORS configuration - allow both local dev and production
+# --- CORS CONFIGURATION (CRITICAL FIX) ---
 allowed_origins = [
     "http://localhost:3000",
     "http://localhost:3000/",
@@ -49,8 +49,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# MOUNT PDF DIRECTORY AS STATIC FILES
-# This allows http://localhost:8000/pdfs/lecture1.pdf to work
+# MOUNT PDF DIRECTORY
 Path(PDF_UPLOAD_DIR).mkdir(exist_ok=True)
 app.mount("/pdfs", StaticFiles(directory=PDF_UPLOAD_DIR), name="pdfs")
 
@@ -59,7 +58,6 @@ DISPLAY_NAMES_FILE = Path("display_names.json")
 
 
 def load_display_names():
-    """Load display name mappings from JSON file"""
     if DISPLAY_NAMES_FILE.exists():
         try:
             with open(DISPLAY_NAMES_FILE, "r") as f:
@@ -70,7 +68,6 @@ def load_display_names():
 
 
 def save_display_names(display_names: dict):
-    """Save display name mappings to JSON file"""
     try:
         with open(DISPLAY_NAMES_FILE, "w") as f:
             json.dump(display_names, f, indent=2)
@@ -83,57 +80,29 @@ async def root():
     return {"message": "MyTutorBot Backend is Running"}
 
 
+# --- HEALTH CHECK (CRITICAL FIX) ---
 @app.get("/health")
 async def health_check():
-    """Health check endpoint with performance metrics"""
-    import time
-
     health_data = {
         "status": "healthy",
         "timestamp": time.time(),
         "s3_enabled": is_s3_enabled(),
     }
-
-    # Test ChromaDB
-    try:
-        stats = get_index_stats()
-        health_data["chromadb"] = {
-            "status": "ok",
-            "documents": stats.get("document_count", 0),
-        }
-    except Exception as e:
-        health_data["chromadb"] = {"status": "error", "message": str(e)}
-
-    # Test database
-    try:
-        history = get_history("health_check", limit=1)
-        health_data["database"] = {"status": "ok", "type": "sqlite"}
-    except Exception as e:
-        health_data["database"] = {"status": "error", "message": str(e)}
-
-    # S3 status
-    if is_s3_enabled():
-        try:
-            pdf_count = len(list_s3_pdfs())
-            health_data["s3"] = {"status": "ok", "pdf_count": pdf_count}
-        except Exception as e:
-            health_data["s3"] = {"status": "error", "message": str(e)}
-
     return health_data
 
 
 @app.post("/api/upload")
 async def upload_pdf(file: UploadFile = File(...)):
+    if not file.filename:
+        return {"status": "error", "message": "No filename provided"}
     if not file.filename.endswith(".pdf"):
         return {"status": "error", "message": "Only PDF files allowed"}
 
-    # Save locally first (needed for RAG ingestion)
     file_path = Path(PDF_UPLOAD_DIR) / file.filename
     file_content = await file.read()
     with open(file_path, "wb") as f:
         f.write(file_content)
 
-    # Upload to S3 if enabled
     if is_s3_enabled():
         success = upload_file_to_s3(file_path)
         if not success:
@@ -153,14 +122,11 @@ async def ingest():
 
 @app.post("/api/query")
 async def query_ai(req: QueryRequest):
-    # ITS Logic: Modify the question based on mode
     modified_question = apply_its_mode(req.question, req.mode)
-
     citations = []
     answer = "Error processing request."
 
     try:
-        # Call RAG
         result = query_rag(modified_question, SYSTEM_PROMPT)
         answer = result["answer"]
         citations = result["citations"]
@@ -168,7 +134,6 @@ async def query_ai(req: QueryRequest):
         print(f"Error: {e}")
         answer = "I'm having trouble accessing the course materials right now."
 
-    # Save to DB
     save_message(req.anon_user_id, "user", req.question, req.mode)
     save_message(req.anon_user_id, "assistant", answer, req.mode)
 
@@ -182,16 +147,12 @@ async def get_conversation_history(req: HistoryRequest):
 
 @app.get("/api/files")
 async def list_files():
-    """List available PDFs for the frontend sidebar with their display names"""
-    # Get files from S3 if enabled, otherwise from local directory
     if is_s3_enabled():
         files = list_s3_pdfs()
     else:
         files = [f.name for f in Path(PDF_UPLOAD_DIR).glob("*.pdf")]
 
     display_names = load_display_names()
-
-    # Generate presigned URLs for S3 files if needed
     file_urls = {}
     if is_s3_enabled():
         for filename in files:
@@ -208,7 +169,6 @@ async def list_files():
 
 @app.post("/api/delete-pdf")
 async def delete_pdf(request: Request):
-    """Delete a PDF file and remove it from the Chroma database"""
     try:
         data = await request.json()
         filename = data.get("filename")
@@ -216,20 +176,14 @@ async def delete_pdf(request: Request):
             return {"status": "error", "message": "Filename required"}
 
         file_path = Path(PDF_UPLOAD_DIR) / filename
-
-        # Step 1: Delete from Chroma database first
         delete_pdf_from_database(filename)
 
-        # Step 2: Delete from S3 if enabled
         if is_s3_enabled():
             delete_file_from_s3(filename)
 
-        # Step 3: Delete local file if it exists
         if file_path.exists():
             file_path.unlink()
-            print(f"[DELETE] Deleted local file: {filename}")
 
-        # Step 4: Remove from display names if it exists
         display_names = load_display_names()
         if filename in display_names:
             del display_names[filename]
@@ -243,7 +197,6 @@ async def delete_pdf(request: Request):
 
 @app.post("/api/set-display-name")
 async def set_display_name(request: Request):
-    """Set the display name for a PDF file"""
     try:
         data = await request.json()
         filename = data.get("filename")
@@ -252,19 +205,15 @@ async def set_display_name(request: Request):
         if not filename:
             return {"status": "error", "message": "Filename required"}
 
-        # Validate file exists
         file_path = Path(PDF_UPLOAD_DIR) / filename
         if not file_path.exists():
             return {"status": "error", "message": "File not found"}
 
-        # Load, update, and save display names
         display_names = load_display_names()
-
         if display_name:
             display_names[filename] = display_name
         elif filename in display_names:
             del display_names[filename]
-
         save_display_names(display_names)
 
         return {
