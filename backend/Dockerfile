@@ -29,11 +29,11 @@ RUN pip install --no-cache-dir llama-index-core llama-index-llms-groq
 # ---------------------------
 
 # 6. Install the rest of your requirements
-COPY requirements.txt .
+COPY backend/requirements.txt .
 RUN pip install --no-cache-dir --no-warn-script-location -r requirements.txt
 
 # 7. Copy Code & Start
-COPY . .
+COPY backend .
 
 EXPOSE 8000
 
